@@ -9,6 +9,7 @@ venv/
 dist/
 build/
 models/
+data/
 config.local.*
 .pytest_cache/
 .ruff_cache/

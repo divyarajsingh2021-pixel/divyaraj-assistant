@@ -1,27 +1,175 @@
-"""Tests for conversation orchestration."""
+"""Tests for the tool-using agent loop."""
 
-import pytest
+from pathlib import Path
 
 from divyaraj.core.agent import Agent
-from divyaraj.core.llm import LLMClient
+from divyaraj.core.llm import LLMResponse, ToolCall
 from divyaraj.core.memory import Memory
+from divyaraj.core.tools.base import Tool
 
 
-def test_agent_records_exchange_and_returns_response() -> None:
-    """Agent stores normalized input and generated response."""
-    memory = Memory()
-    agent = Agent(llm=LLMClient(), memory=memory)
+class MockLLM:
+    """Return scripted answers and capture the messages sent by the agent."""
 
-    response = agent.respond("  hello  ")
+    def __init__(self, responses: list[LLMResponse]) -> None:
+        self.responses = responses
+        self.calls: list[list[dict[str, object]]] = []
 
-    assert response == "I heard you: hello"
-    assert [(message.role, message.content) for message in memory.history()] == [
+    def chat(
+        self,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+    ) -> LLMResponse:
+        self.calls.append(list(messages))
+        return self.responses.pop(0)
+
+
+class EchoTool(Tool):
+    """Safe tool for agent-loop tests."""
+
+    name = "echo_for_agent_test"
+    description = "Return the provided text."
+    args_schema: dict[str, object] = {"type": "object"}
+
+    def __init__(self) -> None:
+        self.runs = 0
+
+    def run(self, arguments: dict[str, object]) -> str:
+        self.runs += 1
+        return str(arguments["text"])
+
+
+class RiskyAgentTestTool(EchoTool):
+    """Risky tool for confirmation tests."""
+
+    name = "risky_for_agent_test"
+    risky = True
+
+
+def _memory(tmp_path: Path) -> Memory:
+    """Return isolated SQLite memory for one test."""
+    return Memory(tmp_path / "agent.sqlite")
+
+
+def test_agent_returns_final_model_reply_and_persists_turn(tmp_path: Path) -> None:
+    """A plain user turn is sent to the model and stored in memory."""
+    llm = MockLLM([LLMResponse(content="Hello there.")])
+    memory = _memory(tmp_path)
+    agent = Agent(llm=llm, memory=memory, tools=[])
+
+    assert agent.respond(" hello ") == "Hello there."
+    assert [(item.role, item.content) for item in memory.history()] == [
         ("user", "hello"),
-        ("assistant", "I heard you: hello"),
+        ("assistant", "Hello there."),
     ]
 
 
-def test_agent_rejects_empty_input() -> None:
-    """Blank messages are not passed into the LLM."""
-    with pytest.raises(ValueError, match="must not be empty"):
-        Agent().respond("  ")
+def test_agent_executes_tool_then_sends_result_back_to_model(
+    tmp_path: Path,
+) -> None:
+    """Tool output is added to the next model request before final response."""
+    llm = MockLLM(
+        [
+            LLMResponse(
+                content="",
+                tool_calls=(
+                    ToolCall(
+                        name="echo_for_agent_test",
+                        arguments={"text": "tool result"},
+                    ),
+                ),
+            ),
+            LLMResponse(content="The tool said tool result."),
+        ]
+    )
+    tool = EchoTool()
+    agent = Agent(llm=llm, memory=_memory(tmp_path), tools=[tool])
+
+    assert agent.respond("use the tool") == "The tool said tool result."
+    assert tool.runs == 1
+    assert llm.calls[1][-1] == {
+        "role": "tool",
+        "name": "echo_for_agent_test",
+        "content": "tool result",
+    }
+
+
+def test_agent_stops_after_five_tool_steps(tmp_path: Path) -> None:
+    """A tool-request loop cannot run more than five times per user turn."""
+    llm = MockLLM(
+        [
+            *[
+                LLMResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            name="echo_for_agent_test",
+                            arguments={"text": "again"},
+                        ),
+                    ),
+                )
+                for _ in range(6)
+            ]
+        ]
+    )
+    tool = EchoTool()
+    agent = Agent(llm=llm, memory=_memory(tmp_path), tools=[tool])
+
+    response = agent.respond("loop")
+
+    assert "stopped after 5 tool steps" in response
+    assert tool.runs == 5
+
+
+def test_risky_tool_runs_when_confirmation_approved(tmp_path: Path) -> None:
+    """An approved risky tool request is executed."""
+    llm = MockLLM(
+        [
+            LLMResponse(
+                content="",
+                tool_calls=(ToolCall("risky_for_agent_test", {"text": "done"}),),
+            ),
+            LLMResponse("Action completed."),
+        ]
+    )
+    tool = RiskyAgentTestTool()
+    confirmations: list[str] = []
+
+    def approve(requested: Tool) -> bool:
+        confirmations.append(requested.name)
+        return True
+
+    agent = Agent(
+        llm=llm,
+        memory=_memory(tmp_path),
+        tools=[tool],
+        confirmation_callback=approve,
+    )
+
+    assert agent.respond("open it") == "Action completed."
+    assert confirmations == ["risky_for_agent_test"]
+    assert tool.runs == 1
+
+
+def test_risky_tool_is_not_run_when_confirmation_denied(tmp_path: Path) -> None:
+    """A denied risky request is sent back as cancelled without running it."""
+    llm = MockLLM(
+        [
+            LLMResponse(
+                content="",
+                tool_calls=(ToolCall("risky_for_agent_test", {"text": "done"}),),
+            ),
+            LLMResponse("I cancelled that action."),
+        ]
+    )
+    tool = RiskyAgentTestTool()
+    agent = Agent(
+        llm=llm,
+        memory=_memory(tmp_path),
+        tools=[tool],
+        confirmation_callback=lambda requested: False,
+    )
+
+    assert agent.respond("open it") == "I cancelled that action."
+    assert tool.runs == 0
+    assert "did not approve" in str(llm.calls[1][-1]["content"])

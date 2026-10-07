@@ -14,18 +14,18 @@ class RiskyTestTool(GetTimeTool):
 
 
 def test_safe_tool_does_not_require_confirmation() -> None:
-    """Safe tools can pass the safety check without confirmation."""
-    ensure_confirmation(GetTimeTool())
+    """Safe tools do not invoke a confirmation callback."""
+    ensure_confirmation(GetTimeTool(), lambda tool: pytest.fail("unexpected prompt"))
 
 
-def test_risky_tool_requires_explicit_confirmation() -> None:
-    """Risky tools are blocked until confirmation is provided."""
-    with pytest.raises(
-        ConfirmationRequiredError, match="requires explicit confirmation"
-    ):
+def test_risky_tool_requires_and_obeys_confirmation() -> None:
+    """Risky tools are blocked when confirmation is missing or denied."""
+    with pytest.raises(ConfirmationRequiredError, match="explicit confirmation"):
         ensure_confirmation(RiskyTestTool())
+    with pytest.raises(ConfirmationRequiredError, match="explicit confirmation"):
+        ensure_confirmation(RiskyTestTool(), lambda tool: False)
 
 
 def test_confirmed_risky_tool_passes() -> None:
-    """Explicit confirmation allows a risky tool to pass the check."""
-    ensure_confirmation(RiskyTestTool(), confirmed=True)
+    """Explicit user approval allows a risky tool."""
+    ensure_confirmation(RiskyTestTool(), lambda tool: True)
