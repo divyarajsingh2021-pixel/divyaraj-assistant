@@ -1,0 +1,15 @@
+﻿.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+models/
+config.local.*
+.pytest_cache/
+.ruff_cache/
+.idea/
+.vscode/
