@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 from divyaraj import __main__ as cli
 from divyaraj.config import Settings
 from divyaraj.core.llm import OllamaUnavailableError
@@ -121,4 +123,86 @@ def test_voice_mode_routes_transcribed_turn_and_mute_commands(
         ("A short reply.", False),
         ("A short reply.", True),
     ]
-    assert "Model: qwen2.5:3b" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Model: qwen2.5:3b" in output
+    assert "Speech recognition model: base (CPU, int8)" in output
+
+
+def test_direct_time_command_prints_human_friendly_value(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    """The text-mode shortcut does not print an ISO timestamp."""
+    from divyaraj.core.tools.base import Tool
+
+    settings = Settings(data_dir=tmp_path)
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(sys, "argv", ["divyaraj"])
+    prompts = iter(["/time", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(prompts))
+
+    class FixedClockTool(Tool):
+        name = "get_time"
+        description = "Fixed local time for the CLI test."
+        args_schema: dict[str, object] = {"type": "object"}
+
+        def run(self, arguments: dict[str, object]) -> str:
+            return "2026-10-11T21:47:00+05:30"
+
+    monkeypatch.setattr(cli, "get_tool", lambda name: FixedClockTool())
+    monkeypatch.setattr(cli, "OllamaClient", lambda configuration: object())
+
+    class FakeAgent:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+    monkeypatch.setattr(cli, "Agent", FakeAgent)
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert "It's 9:47 PM on Sunday, 11 October." in output
+    assert "2026-10-11T" not in output
+
+
+def test_low_confidence_voice_transcript_does_not_call_agent(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    """A one-word transcript gets a retry prompt and never reaches the LLM."""
+    from divyaraj.stt import Transcript
+
+    settings = Settings(data_dir=tmp_path)
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(sys, "argv", ["divyaraj", "--voice"])
+    prompts = iter(["", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(prompts))
+
+    class FakeSpeechToText:
+        def __init__(self, configuration: Settings) -> None:
+            pass
+
+        def listen(self, *, started: bool) -> Transcript:
+            return Transcript(text="hi", language="en")
+
+    class NeverCalledAgent:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def respond(self, message: str) -> str:
+            pytest.fail("Low-confidence input must not reach the agent.")
+
+    class FakeTextToSpeech:
+        def __init__(self, configuration: Settings) -> None:
+            pass
+
+    monkeypatch.setattr(cli, "OllamaClient", lambda configuration: object())
+    monkeypatch.setattr(cli, "Agent", NeverCalledAgent)
+    monkeypatch.setattr(cli, "SpeechToText", FakeSpeechToText)
+    monkeypatch.setattr(cli, "TextToSpeech", FakeTextToSpeech)
+
+    cli.main()
+
+    assert "Sorry, I didn't catch that. Please say it again." in capsys.readouterr().out

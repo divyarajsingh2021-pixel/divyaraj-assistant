@@ -4,13 +4,13 @@ import io
 import logging
 import re
 import wave
-from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 
 from divyaraj.config import Settings, load_settings
+from divyaraj.core.replies import format_tool_reply
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,19 +60,7 @@ class SpeechOutputError(RuntimeError):
 
 def format_for_speech(text: str) -> str:
     """Format machine-readable local timestamps naturally for spoken replies."""
-    value = text.strip()
-    if "T" not in value:
-        return value
-    try:
-        local_time = datetime.fromisoformat(value)
-    except ValueError:
-        return value
-
-    hour_and_minute = local_time.strftime("%I:%M %p").lstrip("0")
-    return (
-        f"It's {hour_and_minute} on {local_time.strftime('%A')}, "
-        f"{local_time.day} {local_time.strftime('%B')}"
-    )
+    return format_tool_reply("get_time", text).strip()
 
 
 def shorten_for_speech(text: str, max_characters: int = 240) -> str:

@@ -147,13 +147,14 @@ class SpeechToText:
             recognized_segments = list(segments)
         except (OSError, RuntimeError, ValueError) as error:
             raise VoiceInputError(
-                f"Speech recognition failed: {error}. Try again or use --model tiny."
+                f"Speech recognition failed: {error}. Try again or use "
+                "'WHISPER_MODEL=tiny' in .env."
             ) from error
 
         text = " ".join(segment.text.strip() for segment in recognized_segments).strip()
         if not text:
             raise LowConfidenceTranscriptError(
-                "I couldn't understand that. Please repeat it more clearly."
+                "Sorry, I didn't catch that. Please say it again."
             )
         average_log_probability = sum(
             segment.avg_logprob for segment in recognized_segments
@@ -164,9 +165,10 @@ class SpeechToText:
         if (
             average_log_probability < MIN_AVERAGE_LOG_PROBABILITY
             or max_no_speech_probability > MAX_NO_SPEECH_PROBABILITY
+            or _looks_like_noise(text)
         ):
             raise LowConfidenceTranscriptError(
-                "I wasn't confident I heard that correctly. Please repeat it."
+                "Sorry, I didn't catch that. Please say it again."
             )
         language = getattr(info, "language", None)
         return Transcript(text=text, language=language)
@@ -225,13 +227,13 @@ class SpeechToText:
             ) from error
         try:
             return WhisperModel(
-                self.settings.stt_model,
+                self.settings.whisper_model,
                 device="cpu",
                 compute_type=self.settings.stt_compute_type,
             )
         except (OSError, RuntimeError, ValueError) as error:
             raise VoiceInputError(
-                f"Could not load Whisper model '{self.settings.stt_model}': {error}"
+                f"Could not load Whisper model '{self.settings.whisper_model}': {error}"
             ) from error
 
     def _load_audio_backend(self) -> AudioBackend:
@@ -244,3 +246,24 @@ class SpeechToText:
                 "'python -m pip install sounddevice'."
             ) from error
         return sounddevice
+
+
+def _looks_like_noise(text: str) -> bool:
+    """Reject near-empty or obviously non-speech recognition results."""
+    normalized = " ".join(text.casefold().split())
+    letters = [character for character in normalized if character.isalpha()]
+    if len(letters) < 3 or len(normalized.split()) < 2:
+        return True
+    return bool(
+        normalized in {"hmm", "hm", "uh", "um", "ah", "eh", "noise", "static"}
+        or (
+            len(letters) >= 4
+            and len(set(letters)) == 1
+            and not normalized.startswith(("no", "yes", "ok"))
+        )
+    )
+
+
+def is_low_confidence_transcript(transcript: Transcript) -> bool:
+    """Guard the CLI against short or noise-like recognized text."""
+    return len(transcript.text.split()) < 2 or _looks_like_noise(transcript.text)

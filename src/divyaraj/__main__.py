@@ -6,9 +6,14 @@ import sys
 from divyaraj.config import load_settings
 from divyaraj.core.agent import Agent
 from divyaraj.core.llm import OllamaClient, OllamaUnavailableError
+from divyaraj.core.replies import format_tool_reply
 from divyaraj.core.tools.base import Tool
 from divyaraj.core.tools.registry import get_tool
-from divyaraj.stt import SpeechToText, VoiceInputError
+from divyaraj.stt import (
+    SpeechToText,
+    VoiceInputError,
+    is_low_confidence_transcript,
+)
 from divyaraj.tts import SpeechOutputError, TextToSpeech
 
 
@@ -41,6 +46,10 @@ def main() -> None:
     )
     print(f"Model: {settings.ollama_model}")
     if args.voice:
+        print(
+            f"Speech recognition model: {settings.whisper_model} "
+            f"(CPU, {settings.stt_compute_type})"
+        )
         print("Divyaraj Assistant (voice mode). Enter starts push-to-talk.")
         _voice_loop(agent, SpeechToText(settings), TextToSpeech(settings))
         return
@@ -58,7 +67,7 @@ def main() -> None:
         if not message:
             continue
         if message == "/time":
-            print(get_tool("get_time").run({}))
+            print(format_tool_reply("get_time", get_tool("get_time").run({})))
             continue
         try:
             print(agent.respond(message))
@@ -101,6 +110,9 @@ def _voice_loop(
         try:
             transcript = speech_to_text.listen(started=True)
             message = transcript.text.strip()
+            if is_low_confidence_transcript(transcript):
+                print("Sorry, I didn't catch that. Please say it again.")
+                continue
             print(f"You: {message}")
             if message.casefold() in {"/mute", "/unmute"}:
                 muted = message.casefold() == "/mute"

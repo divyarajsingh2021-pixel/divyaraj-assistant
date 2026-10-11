@@ -39,11 +39,12 @@ A voice-first personal AI assistant that understands requests, uses tools, and r
    voice. Without Piper or its model, the app uses Windows voices through `pyttsx3`
    and prints setup guidance.
 5. Optionally copy `.env.example` to `.env` and set `OLLAMA_MODEL`,
-   `OLLAMA_BASE_URL`, `DATA_DIR`, `ALLOWED_APPS`, `STT_MODEL`, `STT_COMPUTE_TYPE`,
-   or `PIPER_MODEL_PATH`. `ALLOWED_APPS` is a JSON object mapping approved app names
-   to executable paths. `STT_MODEL` defaults to the CPU-light `tiny`; `base` is
-   available for improved accuracy if memory allows. STT uses CPU `int8` inference
-   and automatically detects Hindi, English, and Hinglish speech.
+   `OLLAMA_BASE_URL`, `DATA_DIR`, `ALLOWED_APPS`, `WHISPER_MODEL`,
+   `STT_COMPUTE_TYPE`, or `PIPER_MODEL_PATH`. `ALLOWED_APPS` is a JSON object
+   mapping approved app names to executable paths. `WHISPER_MODEL` defaults to
+   `base`; speech recognition uses CPU `int8` inference and automatically detects
+   Hindi, English, and Hinglish speech. Set `WHISPER_MODEL=tiny` for lower memory
+   use.
 6. Run the text CLI:
 
    ```powershell

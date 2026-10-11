@@ -9,11 +9,13 @@ def test_load_settings_reads_environment(monkeypatch) -> None:
     """Environment values override the defaults."""
     monkeypatch.setenv("APP_NAME", "Test Assistant")
     monkeypatch.setenv("OLLAMA_MODEL", "test-model")
+    monkeypatch.setenv("WHISPER_MODEL", "base")
 
     settings = load_settings()
 
     assert settings.app_name == "Test Assistant"
     assert settings.ollama_model == "test-model"
+    assert settings.whisper_model == "base"
 
 
 def test_load_settings_uses_defaults(monkeypatch) -> None:
@@ -25,6 +27,7 @@ def test_load_settings_uses_defaults(monkeypatch) -> None:
         "LLM_PROVIDER",
         "OLLAMA_BASE_URL",
         "OLLAMA_MODEL",
+        "WHISPER_MODEL",
         "DATA_DIR",
         "ALLOWED_APPS",
     ):
@@ -36,6 +39,7 @@ def test_load_settings_uses_defaults(monkeypatch) -> None:
     assert settings.llm_provider == "ollama"
     assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.ollama_model == "qwen2.5:3b"
+    assert settings.whisper_model == "base"
     assert settings.allowed_apps == {
         "calculator": "calc.exe",
         "explorer": "explorer.exe",

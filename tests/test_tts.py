@@ -57,7 +57,7 @@ def test_time_is_formatted_only_for_spoken_reply() -> None:
     """ISO tool output remains intact while the speech formatter localizes it."""
     raw_time = "2026-10-11T21:18:00+05:30"
 
-    assert format_for_speech(raw_time) == ("It's 9:18 PM on Sunday, 11 October")
+    assert format_for_speech(raw_time) == ("It's 9:18 PM on Sunday, 11 October.")
     assert format_for_speech("A normal assistant reply.") == (
         "A normal assistant reply."
     )
