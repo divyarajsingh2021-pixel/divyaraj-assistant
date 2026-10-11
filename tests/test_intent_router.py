@@ -2,6 +2,7 @@
 
 from divyaraj.core.intent_router import (
     detect_function_call_instruction,
+    has_clock_time_or_date,
     has_function_call_instruction,
     route_intent,
 )
@@ -13,6 +14,29 @@ def test_router_matches_time_and_date_requests() -> None:
         intent = route_intent(text)
         assert intent is not None
         assert (intent.tool_name, intent.arguments) == ("get_time", {})
+
+
+def test_router_matches_speech_variants_for_time_and_date() -> None:
+    """Transcription punctuation and common Hindi/Hinglish wording still route."""
+    variants = (
+        "what time it is?",
+        "WHAT TIME IS IT!!!",
+        "what's the time",
+        "tell me the time.",
+        "time now",
+        "current time please",
+        "today's date?",
+        "What day is it?",
+        "samay kya hai",
+        "time kya hua",
+        "aaj ki date",
+        "abhi time kya hai?",
+        "aaj kaun sa din hai",
+    )
+    for text in variants:
+        intent = route_intent(text)
+        assert intent is not None, text
+        assert intent.tool_name == "get_time", text
 
 
 def test_router_matches_list_and_create_note_requests() -> None:
@@ -31,6 +55,19 @@ def test_router_matches_list_and_create_note_requests() -> None:
     }
     assert needs_content is not None
     assert needs_content.clarification == "What would you like me to note?"
+
+
+def test_router_matches_speech_variants_for_notes() -> None:
+    """Note-taking commands tolerate punctuation, capitalization, and variants."""
+    for text in ("NOTE DOWN: buy milk", "note down, buy milk!", "Make a note"):
+        intent = route_intent(text)
+        assert intent is not None, text
+        assert intent.tool_name == "create_note", text
+
+    for text in ("my notes?", "show notes!", "Show my notes", "list notes"):
+        intent = route_intent(text)
+        assert intent is not None, text
+        assert intent.tool_name == "list_notes", text
 
 
 def test_router_matches_web_search_and_allowlisted_app() -> None:
@@ -60,3 +97,16 @@ def test_function_call_instruction_detection_requires_a_tool_name() -> None:
     )
     assert detect_function_call_instruction(reply, {"get_time"}) is None
     assert not has_function_call_instruction("I will use web_search now.")
+
+
+def test_clock_or_date_reply_detection() -> None:
+    """Common time and calendar forms are detected, unrelated numbers are not."""
+    for reply in (
+        "It is 9:18 PM.",
+        "The time is 21:18.",
+        "Today is Sunday, 11 October.",
+        "The date is 2026-10-11.",
+        "Meet me on 10/11/2026.",
+    ):
+        assert has_clock_time_or_date(reply), reply
+    assert not has_clock_time_or_date("The answer is version 3.11.")

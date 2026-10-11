@@ -7,6 +7,7 @@ from divyaraj.config import load_settings
 from divyaraj.core.intent_router import (
     ToolIntent,
     detect_function_call_instruction,
+    has_clock_time_or_date,
     has_function_call_instruction,
     route_intent,
 )
@@ -118,6 +119,10 @@ class Agent:
                 messages.append({"role": "tool", "name": tool_name, "content": result})
                 continue
             if not response.tool_calls:
+                if tool_steps == 0 and has_clock_time_or_date(response.content):
+                    clock_result = self._run_tool(ToolCall("get_time", {}))
+                    self.memory.add_assistant_message(clock_result)
+                    return clock_result
                 self.memory.add_assistant_message(response.content)
                 return response.content
             if tool_steps >= MAX_TOOL_STEPS:

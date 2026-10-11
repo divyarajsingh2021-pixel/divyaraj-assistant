@@ -56,6 +56,21 @@ class WebSearchTestTool(EchoTool):
         return str(arguments["query"])
 
 
+class FixedTimeTool(Tool):
+    """Clock tool that returns a known value for guard tests."""
+
+    name = "get_time"
+    description = "Return a fixed test time."
+    args_schema: dict[str, object] = {"type": "object"}
+
+    def __init__(self) -> None:
+        self.runs = 0
+
+    def run(self, arguments: dict[str, object]) -> str:
+        self.runs += 1
+        return "2026-10-11T21:18:00+05:30"
+
+
 def _memory(tmp_path: Path) -> Memory:
     """Return isolated SQLite memory for one test."""
     return Memory(tmp_path / "agent.sqlite")
@@ -126,6 +141,19 @@ def test_agent_recovers_function_instruction_and_runs_tool(tmp_path: Path) -> No
         "name": "web_search",
         "content": "Find recent Python news.",
     }
+
+
+def test_agent_replaces_unverified_time_or_date_with_clock_tool(
+    tmp_path: Path,
+) -> None:
+    """A final model answer containing a date is discarded without tool use."""
+    llm = MockLLM([LLMResponse(content="It is Sunday, 11 October at 9:18 PM.")])
+    clock = FixedTimeTool()
+    agent = Agent(llm=llm, memory=_memory(tmp_path), tools=[clock])
+
+    assert agent.respond("Tell me something.") == "2026-10-11T21:18:00+05:30"
+    assert clock.runs == 1
+    assert len(llm.calls) == 1
 
 
 def test_agent_stops_after_five_tool_steps(tmp_path: Path) -> None:

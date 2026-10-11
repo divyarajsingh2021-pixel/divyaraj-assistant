@@ -15,17 +15,26 @@ class ToolIntent:
 
 
 _TIME_OR_DATE_PATTERNS = (
-    r"\bwhat(?:'s| is) the time\b",
-    r"\bwhat time is it\b",
+    r"\bwhat time (?:is it|it is)\b",
+    r"\bwhat is the time\b",
     r"\btime is it\b",
-    r"\bcurrent time\b",
     r"\btell me the time\b",
     r"\btime now\b",
-    r"\btoday(?:'s)? date\b",
+    r"\bcurrent time\b",
+    r"\btime kya (?:hai|hua)\b",
+    r"\b(?:abhi )?time kya hai\b",
+    r"\bsamay kya hai\b",
+    r"\bkitne baje (?:hain|hai)\b",
+    r"\btoday s date\b",
+    r"\btoday date\b",
+    r"\baaj ki date\b",
+    r"\baaj ka date\b",
+    r"\baaj (?:kya )?date (?:hai|hain)\b",
     r"\bcurrent date\b",
-    r"\bwhat date is it\b",
+    r"\bwhat date (?:is it|it is)\b",
     r"\bdate today\b",
-    r"\bwhat day is it\b",
+    r"\bwhat day (?:is it|it is)\b",
+    r"\baaj kaun sa din hai\b",
 )
 _LIST_NOTE_PATTERNS = (
     r"\bmy notes\b",
@@ -34,7 +43,9 @@ _LIST_NOTE_PATTERNS = (
     r"\bwhat notes do i have\b",
 )
 _CREATE_NOTE_PREFIX = re.compile(
-    r"^\s*(?:make|add|create) (?:me )?a note\b\s*[:,-]?\s*",
+    r"^\s*(?:please[\W_]+)?"
+    r"(?:(?:make|add|create)[\W_]+(?:me[\W_]+)?a[\W_]+note"
+    r"(?:[\W_]+of)?|note[\W_]+down)\b[\s:,-]*",
     re.IGNORECASE,
 )
 
@@ -44,7 +55,7 @@ def route_intent(
     allowed_apps: Mapping[str, str] | None = None,
 ) -> ToolIntent | None:
     """Return a deterministic tool intent for clearly phrased requests."""
-    normalized = text.casefold().replace("’", "'")
+    normalized = _normalize_text(text)
     if any(re.search(pattern, normalized) for pattern in _TIME_OR_DATE_PATTERNS):
         return ToolIntent("get_time", {})
 
@@ -83,6 +94,41 @@ def route_intent(
             return ToolIntent("open_app", {"app": app_match.group(1).casefold()})
 
     return None
+
+
+def has_clock_time_or_date(text: str) -> bool:
+    """Detect common clock times or calendar dates in a model's final reply."""
+    if re.search(
+        r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d"
+        r"(?:\s?(?:a\.?m\.?|p\.?m\.?))?(?!\d)"
+        r"|\b(?:1[0-2]|0?[1-9])\s?(?:a\.?m\.?|p\.?m\.?)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
+    if re.search(
+        r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b"
+        r"|\b\d{1,2}[-/]\d{1,2}(?:[-/]\d{2,4})?\b",
+        text,
+    ):
+        return True
+    normalized = _normalize_text(text)
+    return bool(
+        re.search(
+            r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+            r"january|february|march|april|may|june|july|august|september|"
+            r"october|november|december)\b",
+            normalized,
+        )
+    )
+
+
+def _normalize_text(text: str) -> str:
+    """Normalize punctuation and common contractions in speech transcripts."""
+    normalized = text.casefold().replace("’", "'")
+    normalized = re.sub(r"\bwhat[' ]s\b", "what is", normalized)
+    normalized = re.sub(r"[^\w\s]", " ", normalized)
+    return " ".join(normalized.split())
 
 
 def detect_function_call_instruction(
