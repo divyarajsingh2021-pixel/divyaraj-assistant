@@ -32,6 +32,7 @@ def main() -> None:
         llm=OllamaClient(settings),
         confirmation_callback=_confirm_tool,
     )
+    print(f"Model: {settings.ollama_model}")
     print("Divyaraj Assistant (text mode). Type /time or 'exit' to quit.")
     while True:
         try:

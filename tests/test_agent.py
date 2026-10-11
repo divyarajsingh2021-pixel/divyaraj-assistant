@@ -46,6 +46,16 @@ class RiskyAgentTestTool(EchoTool):
     risky = True
 
 
+class WebSearchTestTool(EchoTool):
+    """Tool named like web search for textual instruction recovery tests."""
+
+    name = "web_search"
+
+    def run(self, arguments: dict[str, object]) -> str:
+        self.runs += 1
+        return str(arguments["query"])
+
+
 def _memory(tmp_path: Path) -> Memory:
     """Return isolated SQLite memory for one test."""
     return Memory(tmp_path / "agent.sqlite")
@@ -91,6 +101,30 @@ def test_agent_executes_tool_then_sends_result_back_to_model(
         "role": "tool",
         "name": "echo_for_agent_test",
         "content": "tool result",
+    }
+
+
+def test_agent_recovers_function_instruction_and_runs_tool(tmp_path: Path) -> None:
+    """The agent executes a named tool instead of asking the user to call it."""
+    llm = MockLLM(
+        [
+            LLMResponse(content="Please call the function web_search."),
+            LLMResponse(content="Here are the results."),
+        ]
+    )
+    tool = WebSearchTestTool()
+    agent = Agent(llm=llm, memory=_memory(tmp_path), tools=[tool])
+
+    assert agent.respond("Find recent Python news.") == "Here are the results."
+    assert tool.runs == 1
+    assert llm.calls[0][0]["role"] == "system"
+    system_prompt = str(llm.calls[0][0]["content"])
+    assert "ALWAYS call get_time" in system_prompt
+    assert "ALWAYS call web_search" in system_prompt
+    assert llm.calls[1][-1] == {
+        "role": "tool",
+        "name": "web_search",
+        "content": "Find recent Python news.",
     }
 
 

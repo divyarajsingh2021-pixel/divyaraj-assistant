@@ -8,7 +8,7 @@ from divyaraj.config import Settings
 from divyaraj.core.llm import OllamaUnavailableError
 
 
-def test_cli_passes_model_option_to_ollama(monkeypatch, tmp_path: Path) -> None:
+def test_cli_passes_model_option_to_ollama(monkeypatch, capsys, tmp_path: Path) -> None:
     """The --model option overrides the configured default."""
     settings = Settings(data_dir=tmp_path)
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
@@ -36,6 +36,7 @@ def test_cli_passes_model_option_to_ollama(monkeypatch, tmp_path: Path) -> None:
 
     assert clients[0].ollama_model == "selected-model"
     assert callable(agents[0]["confirmation_callback"])
+    assert "Model: selected-model" in capsys.readouterr().out
 
 
 def test_cli_explains_how_to_recover_when_ollama_is_offline(

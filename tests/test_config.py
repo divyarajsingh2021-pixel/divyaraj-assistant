@@ -18,6 +18,7 @@ def test_load_settings_reads_environment(monkeypatch) -> None:
 
 def test_load_settings_uses_defaults(monkeypatch) -> None:
     """Unset values receive safe local defaults."""
+    monkeypatch.setattr("divyaraj.config.load_dotenv", lambda: None)
     for name in (
         "APP_NAME",
         "LOG_LEVEL",
