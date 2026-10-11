@@ -10,12 +10,14 @@ def test_load_settings_reads_environment(monkeypatch) -> None:
     monkeypatch.setenv("APP_NAME", "Test Assistant")
     monkeypatch.setenv("OLLAMA_MODEL", "test-model")
     monkeypatch.setenv("WHISPER_MODEL", "base")
+    monkeypatch.setenv("VOICE_ENABLED", "false")
 
     settings = load_settings()
 
     assert settings.app_name == "Test Assistant"
     assert settings.ollama_model == "test-model"
     assert settings.whisper_model == "base"
+    assert not settings.voice_enabled
 
 
 def test_load_settings_uses_defaults(monkeypatch) -> None:
@@ -28,6 +30,7 @@ def test_load_settings_uses_defaults(monkeypatch) -> None:
         "OLLAMA_BASE_URL",
         "OLLAMA_MODEL",
         "WHISPER_MODEL",
+        "VOICE_ENABLED",
         "DATA_DIR",
         "ALLOWED_APPS",
     ):

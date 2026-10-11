@@ -28,6 +28,7 @@ class Settings(BaseModel):
     )
     whisper_model: str = "base"
     stt_compute_type: str = "int8"
+    voice_enabled: bool = True
     piper_model_path: Path = Path("models/en_US-lessac-medium.onnx")
     speech_max_characters: int = 240
 
@@ -65,6 +66,8 @@ def load_settings() -> Settings:
         },
         whisper_model=os.environ.get("WHISPER_MODEL", "base"),
         stt_compute_type=os.environ.get("STT_COMPUTE_TYPE", "int8"),
+        voice_enabled=os.environ.get("VOICE_ENABLED", "true").casefold()
+        in {"1", "true", "yes", "on"},
         piper_model_path=Path(
             os.environ.get("PIPER_MODEL_PATH", "models/en_US-lessac-medium.onnx")
         ),

@@ -206,3 +206,25 @@ def test_low_confidence_voice_transcript_does_not_call_agent(
     cli.main()
 
     assert "Sorry, I didn't catch that. Please say it again." in capsys.readouterr().out
+
+
+def test_gui_flag_starts_desktop_without_entering_cli(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The --gui option dispatches directly to the desktop application."""
+    import types
+
+    settings = Settings(data_dir=tmp_path)
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(sys, "argv", ["divyaraj", "--gui"])
+    calls = []
+    monkeypatch.setitem(
+        sys.modules,
+        "divyaraj.ui_desktop.app",
+        types.SimpleNamespace(run_desktop=calls.append),
+    )
+
+    cli.main()
+
+    assert calls == [settings]

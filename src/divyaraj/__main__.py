@@ -35,11 +35,22 @@ def main() -> None:
         action="store_true",
         help="Use push-to-talk speech input and offline speech output.",
     )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Open the desktop chat window.",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
     if args.model:
         settings = settings.model_copy(update={"ollama_model": args.model})
+    if args.gui:
+        from divyaraj.ui_desktop.app import run_desktop
+
+        run_desktop(settings)
+        return
+
     agent = Agent(
         llm=OllamaClient(settings),
         confirmation_callback=_confirm_tool,

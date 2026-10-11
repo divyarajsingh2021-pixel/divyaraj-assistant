@@ -64,6 +64,17 @@ A voice-first personal AI assistant that understands requests, uses tools, and r
    them back on. Full answers remain visible in the terminal; spoken answers are
    shortened. Speech recognition and synthesis use the CPU and do not require a GPU.
 
+8. Run the desktop chat window:
+
+   ```powershell
+   python -m divyaraj --gui
+   ```
+
+   The window supports text chat, push-to-talk by clicking the microphone button to
+   start and again to stop, voice mute, and Ctrl+Enter to send. Risky actions show a
+   Yes/No confirmation dialog. Model, voice reply, and Whisper preferences are saved
+   to the ignored `.env` file. Ollama connection failures include a Retry button.
+
 The CLI stores conversation history and notes in `data/divyaraj.db` by default.
 The web search tool uses DuckDuckGo and returns up to three results.
 
@@ -71,3 +82,8 @@ The Ollama Python SDK provides local chat and function calling; `httpx` is used 
 report Ollama connection failures clearly; `duckduckgo-search` provides the free web
 search integration. Voice input uses `faster-whisper`, NumPy, and `sounddevice`;
 speech output uses offline `piper-tts` with a `pyttsx3` fallback.
+The desktop window uses CustomTkinter for a dark chat interface.
+
+## Screenshots
+
+Screenshots will be added here.
