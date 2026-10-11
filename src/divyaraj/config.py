@@ -26,6 +26,10 @@ class Settings(BaseModel):
     allowed_apps: dict[str, str] = Field(
         default_factory=lambda: DEFAULT_ALLOWED_APPS.copy()
     )
+    stt_model: str = "tiny"
+    stt_compute_type: str = "int8"
+    piper_model_path: Path = Path("models/en_US-lessac-medium.onnx")
+    speech_max_characters: int = 240
 
     @property
     def database_path(self) -> Path:
@@ -59,4 +63,10 @@ def load_settings() -> Settings:
             name.casefold(): executable
             for name, executable in parsed_allowed_apps.items()
         },
+        stt_model=os.environ.get("STT_MODEL", "tiny"),
+        stt_compute_type=os.environ.get("STT_COMPUTE_TYPE", "int8"),
+        piper_model_path=Path(
+            os.environ.get("PIPER_MODEL_PATH", "models/en_US-lessac-medium.onnx")
+        ),
+        speech_max_characters=int(os.environ.get("SPEECH_MAX_CHARACTERS", "240")),
     )

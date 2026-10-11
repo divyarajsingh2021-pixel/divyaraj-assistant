@@ -66,3 +66,59 @@ def test_cli_explains_how_to_recover_when_ollama_is_offline(
     error_output = capsys.readouterr().err
     assert "Could not reach Ollama." in error_output
     assert "ollama pull qwen2.5:3b" in error_output
+
+
+def test_voice_mode_routes_transcribed_turn_and_mute_commands(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    """Voice mode transcribes turns, prints replies, and honors mute toggles."""
+    settings = Settings(data_dir=tmp_path)
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(sys, "argv", ["divyaraj", "--voice"])
+    prompts = iter(["", "/mute", "", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(prompts))
+    speech_to_text_instances = []
+    text_to_speech_instances = []
+    agent_instances = []
+
+    class FakeSpeechToText:
+        def __init__(self, configuration: Settings) -> None:
+            self.listen_calls = 0
+            speech_to_text_instances.append(self)
+
+        def listen(self, *, started: bool) -> object:
+            assert started
+            self.listen_calls += 1
+            return type("Result", (), {"text": "Tell me a joke."})()
+
+    class FakeTextToSpeech:
+        def __init__(self, configuration: Settings) -> None:
+            self.calls: list[tuple[str, bool]] = []
+            text_to_speech_instances.append(self)
+
+        def speak(self, text: str, *, muted: bool = False) -> None:
+            self.calls.append((text, muted))
+
+    class FakeAgent:
+        def __init__(self, **kwargs: object) -> None:
+            agent_instances.append(self)
+
+        def respond(self, message: str) -> str:
+            return "A short reply."
+
+    monkeypatch.setattr(cli, "OllamaClient", lambda configuration: object())
+    monkeypatch.setattr(cli, "Agent", FakeAgent)
+    monkeypatch.setattr(cli, "SpeechToText", FakeSpeechToText)
+    monkeypatch.setattr(cli, "TextToSpeech", FakeTextToSpeech)
+
+    cli.main()
+
+    assert len(speech_to_text_instances) == 1
+    assert speech_to_text_instances[0].listen_calls == 2
+    assert text_to_speech_instances[0].calls == [
+        ("A short reply.", False),
+        ("A short reply.", True),
+    ]
+    assert "Model: qwen2.5:3b" in capsys.readouterr().out
