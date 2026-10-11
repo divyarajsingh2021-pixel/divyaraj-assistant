@@ -11,6 +11,8 @@ def test_load_settings_reads_environment(monkeypatch) -> None:
     monkeypatch.setenv("OLLAMA_MODEL", "test-model")
     monkeypatch.setenv("WHISPER_MODEL", "base")
     monkeypatch.setenv("VOICE_ENABLED", "false")
+    monkeypatch.setenv("GLOBAL_HOTKEY", "alt+space")
+    monkeypatch.setenv("START_WITH_WINDOWS", "true")
 
     settings = load_settings()
 
@@ -18,6 +20,8 @@ def test_load_settings_reads_environment(monkeypatch) -> None:
     assert settings.ollama_model == "test-model"
     assert settings.whisper_model == "base"
     assert not settings.voice_enabled
+    assert settings.global_hotkey == "alt+space"
+    assert settings.start_with_windows
 
 
 def test_load_settings_uses_defaults(monkeypatch) -> None:
@@ -31,6 +35,8 @@ def test_load_settings_uses_defaults(monkeypatch) -> None:
         "OLLAMA_MODEL",
         "WHISPER_MODEL",
         "VOICE_ENABLED",
+        "GLOBAL_HOTKEY",
+        "START_WITH_WINDOWS",
         "DATA_DIR",
         "ALLOWED_APPS",
     ):
@@ -43,6 +49,8 @@ def test_load_settings_uses_defaults(monkeypatch) -> None:
     assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.ollama_model == "qwen2.5:3b"
     assert settings.whisper_model == "base"
+    assert settings.global_hotkey == "ctrl+space"
+    assert not settings.start_with_windows
     assert settings.allowed_apps == {
         "calculator": "calc.exe",
         "explorer": "explorer.exe",

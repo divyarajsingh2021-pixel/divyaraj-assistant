@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import tkinter as tk
 from pathlib import Path
+from queue import SimpleQueue
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -21,16 +22,30 @@ from divyaraj.ui_desktop.controller import (
     DesktopEvent,
     DesktopJob,
 )
+from divyaraj.ui_desktop.hotkey import GlobalHotkey, normalize_hotkey
 from divyaraj.ui_desktop.settings import save_desktop_settings
+from divyaraj.ui_desktop.single_instance import SingleInstanceGuard
+from divyaraj.ui_desktop.startup import set_start_with_windows
+from divyaraj.ui_desktop.tray import TrayController
 
 
 class DesktopWindow(ctk.CTk):
     """Render chat and route UI actions to background assistant services."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        runtime_events: SimpleQueue[str] | None = None,
+        instance_guard: SingleInstanceGuard | None = None,
+    ) -> None:
         """Build the window, assistant services, and background worker."""
         super().__init__()
         self.settings = settings
+        self.runtime_events = runtime_events or SimpleQueue()
+        self.instance_guard = instance_guard
+        self.tray: TrayController | None = None
+        self.hotkey: GlobalHotkey | None = None
+        self.shutting_down = False
         self.title("Divyaraj Assistant")
         self.geometry("900x720")
         self.minsize(640, 520)
@@ -57,9 +72,53 @@ class DesktopWindow(ctk.CTk):
         self.recording = False
         self._retry_job: DesktopJob | None = None
         self._build_layout()
-        self.protocol("WM_DELETE_WINDOW", self._close)
+        self._start_integrations()
+        self.protocol("WM_DELETE_WINDOW", self._minimize_to_tray)
         self.bind("<Control-Return>", self._send_shortcut)
         self.after(100, self._poll_events)
+
+    def _start_integrations(self) -> None:
+        """Start tray and hotkey integrations, reporting optional failures."""
+        try:
+            self.tray = TrayController(
+                on_open=lambda: self.runtime_events.put("open"),
+                on_toggle_mute=lambda: self.runtime_events.put("toggle-mute"),
+                on_quit=lambda: self.runtime_events.put("quit"),
+                is_muted=lambda: self.muted,
+                on_error=lambda text: self.runtime_events.put(f"tray-error:{text}"),
+            )
+            self.tray.start()
+        except (ImportError, OSError, RuntimeError) as error:
+            self.tray = None
+            messagebox.showerror(
+                "System tray unavailable",
+                f"Divyaraj could not start its system tray icon: {error}",
+                parent=self,
+            )
+        self._restart_hotkey(show_error=True)
+
+    def _restart_hotkey(self, *, show_error: bool) -> bool:
+        """Apply the configured global shortcut without failing app startup."""
+        if self.hotkey is not None:
+            self.hotkey.stop()
+            self.hotkey = None
+        try:
+            listener = GlobalHotkey(
+                self.settings.global_hotkey,
+                lambda: self.runtime_events.put("hotkey"),
+            )
+            listener.start()
+        except (ImportError, OSError, RuntimeError, ValueError) as error:
+            self.status_label.configure(text="Global hotkey unavailable")
+            if show_error:
+                messagebox.showwarning(
+                    "Global hotkey unavailable",
+                    f"Divyaraj is still available from its window or tray. {error}",
+                    parent=self,
+                )
+            return False
+        self.hotkey = listener
+        return True
 
     def _build_layout(self) -> None:
         """Create the chat history, controls, and status bar."""
@@ -210,6 +269,12 @@ class DesktopWindow(ctk.CTk):
         self.muted = not self.muted
         self.mute_button.configure(text="Unmute voice" if self.muted else "Mute voice")
 
+    def _show_window(self) -> None:
+        """Restore and focus the chat window."""
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
     def _should_speak(self) -> bool:
         """Return whether this turn should be spoken."""
         return self.voice_enabled and not self.muted
@@ -218,7 +283,7 @@ class DesktopWindow(ctk.CTk):
         """Open a small preferences window for model and voice options."""
         window = ctk.CTkToplevel(self)
         window.title("Divyaraj Settings")
-        window.geometry("420x330")
+        window.geometry("440x430")
         window.transient(self)
         window.grab_set()
         window.grid_columnconfigure(0, weight=1)
@@ -238,17 +303,34 @@ class DesktopWindow(ctk.CTk):
         if self.voice_enabled:
             voice_switch.select()
         voice_switch.grid(row=4, column=0, sticky="w", padx=20, pady=18)
+        ctk.CTkLabel(window, text="Global hotkey").grid(
+            row=5, column=0, sticky="w", padx=20, pady=(4, 4)
+        )
+        hotkey_entry = ctk.CTkEntry(window)
+        hotkey_entry.insert(0, self.settings.global_hotkey)
+        hotkey_entry.grid(row=6, column=0, sticky="ew", padx=20)
+        startup_switch = ctk.CTkSwitch(window, text="Start with Windows")
+        if self.settings.start_with_windows:
+            startup_switch.select()
+        startup_switch.grid(row=7, column=0, sticky="w", padx=20, pady=14)
 
         def save() -> None:
             try:
                 model_name = model_entry.get().strip()
                 whisper_model = whisper_entry.get().strip()
                 voice_enabled = bool(voice_switch.get())
+                global_hotkey = hotkey_entry.get().strip()
+                normalize_hotkey(global_hotkey)
+                start_with_windows = bool(startup_switch.get())
+                if start_with_windows or self.settings.start_with_windows:
+                    set_start_with_windows(start_with_windows)
                 save_desktop_settings(
                     model_name,
                     voice_enabled,
                     whisper_model,
                     Path(".env"),
+                    global_hotkey,
+                    start_with_windows,
                 )
             except (OSError, ValueError) as error:
                 messagebox.showerror(
@@ -260,6 +342,8 @@ class DesktopWindow(ctk.CTk):
                     "ollama_model": model_name,
                     "whisper_model": whisper_model,
                     "voice_enabled": voice_enabled,
+                    "global_hotkey": global_hotkey,
+                    "start_with_windows": start_with_windows,
                 }
             )
             self.llm.model = model_name
@@ -267,10 +351,11 @@ class DesktopWindow(ctk.CTk):
             self.speech_to_text._model = None
             self.text_to_speech.settings = self.settings
             self.voice_enabled = voice_enabled
+            self._restart_hotkey(show_error=True)
             window.destroy()
 
         ctk.CTkButton(window, text="Save", command=save).grid(
-            row=5, column=0, sticky="ew", padx=20, pady=(0, 18)
+            row=8, column=0, sticky="ew", padx=20, pady=(0, 18)
         )
 
     def _poll_events(self) -> None:
@@ -302,6 +387,32 @@ class DesktopWindow(ctk.CTk):
                 self.retry_button.grid(row=0, column=2, padx=(8, 0), sticky="e")
             elif event.kind == "confirmation" and event.confirmation is not None:
                 self._show_confirmation(event.confirmation)
+        while True:
+            try:
+                action = self.runtime_events.get_nowait()
+            except queue.Empty:
+                break
+            if action == "open":
+                self._show_window()
+            elif action == "toggle-mute":
+                self._toggle_mute()
+            elif action == "hotkey":
+                self._show_window()
+                if self.recording:
+                    self._toggle_recording()
+                elif not self.busy:
+                    self._toggle_recording()
+            elif action == "quit":
+                self._quit()
+                return
+            elif action.startswith("tray-error:"):
+                self.tray = None
+                self.status_label.configure(text="System tray unavailable")
+                messagebox.showerror(
+                    "System tray unavailable",
+                    action.removeprefix("tray-error:"),
+                    parent=self,
+                )
         self.after(100, self._poll_events)
 
     def _show_confirmation(self, request: ConfirmationRequest) -> None:
@@ -361,9 +472,40 @@ class DesktopWindow(ctk.CTk):
             state="normal" if self.recording or not self.busy else "disabled",
         )
 
-    def _close(self) -> None:
-        """Stop background recording and close the window."""
-        self.controller.close()
+    def _minimize_to_tray(self) -> None:
+        """Hide the window while keeping the tray assistant running."""
+        if self.tray is None:
+            messagebox.showwarning(
+                "System tray unavailable",
+                "Divyaraj cannot minimize safely because its tray icon did not "
+                "start. Keep the window open until the tray integration is available.",
+                parent=self,
+            )
+            return
+        self.withdraw()
+
+    def _quit(self) -> None:
+        """Stop global integrations, deny pending confirmations, and exit."""
+        if self.shutting_down:
+            return
+        self.shutting_down = True
+        if self.hotkey is not None:
+            self.hotkey.stop()
+            self.hotkey = None
+        self.confirmations.close()
+        worker_stopped = self.controller.close()
+        if not worker_stopped:
+            messagebox.showwarning(
+                "Assistant is still stopping",
+                "The assistant worker did not stop in time. It will be terminated "
+                "when this process exits.",
+                parent=self,
+            )
+        if self.tray is not None:
+            self.tray.stop()
+            self.tray = None
+        if self.instance_guard is not None:
+            self.instance_guard.close()
         self.destroy()
 
 
@@ -371,5 +513,14 @@ def run_desktop(settings: Settings | None = None) -> None:
     """Start the desktop application using the supplied or loaded settings."""
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
-    window = DesktopWindow(settings or load_settings())
-    window.mainloop()
+    runtime_events: SimpleQueue[str] = SimpleQueue()
+    instance_guard = SingleInstanceGuard(on_show=lambda: runtime_events.put("open"))
+    if not instance_guard.start():
+        return
+    try:
+        window = DesktopWindow(
+            settings or load_settings(), runtime_events, instance_guard
+        )
+        window.mainloop()
+    finally:
+        instance_guard.close()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import queue
 from dataclasses import dataclass, field
-from threading import Event, Thread
+from threading import Event, Lock, Thread, current_thread
 from typing import Literal, Protocol
 
 from divyaraj.core.llm import OllamaUnavailableError
@@ -79,12 +79,31 @@ class ConfirmationBroker:
     def __init__(self, events: queue.Queue[DesktopEvent]) -> None:
         """Create a broker publishing prompts to the supplied UI event queue."""
         self._events = events
+        self._lock = Lock()
+        self._pending: list[ConfirmationRequest] = []
+        self._closed = False
 
     def confirm(self, tool: Tool) -> bool:
         """Request a UI decision and block only the assistant worker."""
         request = ConfirmationRequest(tool)
+        with self._lock:
+            if self._closed:
+                return False
+            self._pending.append(request)
         self._events.put(DesktopEvent(kind="confirmation", confirmation=request))
-        return request.wait()
+        try:
+            return request.wait()
+        finally:
+            with self._lock:
+                self._pending.remove(request)
+
+    def close(self) -> None:
+        """Deny outstanding risky actions and reject new confirmation requests."""
+        with self._lock:
+            self._closed = True
+            pending = tuple(self._pending)
+        for request in pending:
+            request.resolve(False)
 
 
 class DesktopController:
@@ -104,15 +123,18 @@ class DesktopController:
         self._text_to_speech = text_to_speech
         self._jobs: queue.Queue[DesktopJob | None] = queue.Queue()
         self._recording_stop: Event | None = None
+        self._closed = Event()
         self._thread = Thread(target=self._run, name="divyaraj-desktop", daemon=True)
         self._thread.start()
 
     def submit_text(self, message: str, *, speak: bool) -> None:
         """Queue a text turn for background processing."""
+        self._ensure_open()
         self._jobs.put(DesktopJob(kind="text", message=message, speak=speak))
 
     def start_voice(self, *, speak: bool) -> None:
         """Queue a push-to-talk turn and retain its stop signal."""
+        self._ensure_open()
         if self._recording_stop is not None:
             return
         stop_event = Event()
@@ -134,18 +156,42 @@ class DesktopController:
 
     def retry(self, job: DesktopJob) -> None:
         """Retry a turn that failed because Ollama was unavailable."""
+        self._ensure_open()
         self._jobs.put(job)
 
-    def close(self) -> None:
-        """Signal an active recording and allow the daemon worker to exit."""
+    def close(self, timeout: float = 2) -> bool:
+        """Stop queued work and wait briefly for the daemon worker to exit."""
+        if self._closed.is_set():
+            return not self._thread.is_alive()
+        self._closed.set()
         self.stop_voice()
+        while True:
+            try:
+                self._jobs.get_nowait()
+            except queue.Empty:
+                break
         self._jobs.put(None)
+        if self._thread is not current_thread():
+            self._thread.join(timeout=timeout)
+        stopped = not self._thread.is_alive()
+        if not stopped:
+            LOGGER.warning(
+                "Assistant worker did not stop within %.1f seconds.", timeout
+            )
+        return stopped
+
+    def _ensure_open(self) -> None:
+        """Reject work after shutdown has started."""
+        if self._closed.is_set():
+            raise RuntimeError("The desktop assistant is shutting down.")
 
     def _run(self) -> None:
         """Consume queued turns until the window requests shutdown."""
         while True:
             job = self._jobs.get()
             if job is None:
+                return
+            if self._closed.is_set():
                 return
             try:
                 self._process(job)

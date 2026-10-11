@@ -106,6 +106,26 @@ def test_confirmation_broker_delivers_yes_and_no_decisions(
     assert answers == [approved]
 
 
+def test_confirmation_broker_denies_pending_requests_on_close() -> None:
+    """Quitting releases worker threads waiting for a risky-action decision."""
+    events: queue.Queue[DesktopEvent] = queue.Queue()
+    broker = ConfirmationBroker(events)
+    answers: list[bool] = []
+    thread = Thread(
+        target=lambda: answers.append(broker.confirm(ExampleRiskyTool())),
+        daemon=True,
+    )
+    thread.start()
+    events.get(timeout=2)
+
+    broker.close()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert answers == [False]
+    assert not broker.confirm(ExampleRiskyTool())
+
+
 def test_text_turn_runs_in_worker_and_speaks_when_enabled() -> None:
     """The controller runs agent/TTS calls off-thread and publishes replies."""
     events: queue.Queue[DesktopEvent] = queue.Queue()
@@ -118,7 +138,7 @@ def test_text_turn_runs_in_worker_and_speaks_when_enabled() -> None:
     _read_until(events, "status")
     assert agent.messages == ["hello"]
     assert speech.spoken == ["Hello."]
-    controller.close()
+    assert controller.close()
 
 
 def test_offline_turn_can_be_retried_without_losing_message() -> None:
@@ -136,7 +156,7 @@ def test_offline_turn_can_be_retried_without_losing_message() -> None:
     controller.retry(offline.retry_job)
     assert _read_until(events, "reply").text == "Hello."
     assert agent.messages == ["hello again", "hello again"]
-    controller.close()
+    assert controller.close()
 
 
 def test_voice_turn_waits_for_stop_signal_and_emits_transcript() -> None:
@@ -152,4 +172,4 @@ def test_voice_turn_waits_for_stop_signal_and_emits_transcript() -> None:
     assert _read_until(events, "transcript").text == "tell me the time"
     assert _read_until(events, "reply").text == "It's 10 PM."
     assert agent.messages == ["tell me the time"]
-    controller.close()
+    assert controller.close()

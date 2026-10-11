@@ -18,7 +18,11 @@
 - **Notes and SQLite memory:** create, list, and search notes, with conversation
   history stored locally.
 - **Desktop app:** dark CustomTkinter chat window with text entry, push-to-talk,
-  voice mute, settings, and Ollama retry controls.
+  voice mute, settings, Ollama retry controls, and a system tray icon.
+- **Background controls:** Ctrl+Space (configurable) restores the window and starts
+  push-to-talk. A second launch focuses the existing window.
+- **Windows startup:** optionally launch the app at sign-in using a removable
+  current-user Startup-folder command (off by default).
 - **Additional tools:** local time and DuckDuckGo web search.
 
 ## Architecture
@@ -80,7 +84,9 @@ python -m divyaraj --gui
 
 Type in the chat box and press **Send** or **Ctrl+Enter**. Click the microphone
 button to start recording and click it again to stop. Risky tool requests display a
-Yes/No confirmation dialog.
+Yes/No confirmation dialog. Closing the window leaves Divyaraj in the system tray;
+choose **Open**, **Mute voice**, or **Quit** from the tray menu. Press **Ctrl+Space**
+to show the window and start push-to-talk.
 
 ### 5. Optional: run voice mode in the terminal
 
@@ -106,9 +112,11 @@ voice. If Piper or the voice model is unavailable, Divyaraj falls back to Window
 speech voices through `pyttsx3`.
 
 Optional settings can be placed in a local `.env` file (ignored by Git); see
-[`.env.example`](.env.example) for the supported variables. The default model is
-`qwen2.5:3b`, and conversation history and notes are stored in
-`data/divyaraj.db`.
+[`.env.example`](.env.example) for the supported variables. `GLOBAL_HOTKEY` defaults
+to `ctrl+space`. `START_WITH_WINDOWS` defaults to `false`; enabling it creates
+`Divyaraj Assistant.cmd` in the current user's Startup folder, and turning it off
+removes that file. The default model is `qwen2.5:3b`, and conversation history and
+notes are stored in `data/divyaraj.db`.
 
 ## How it works
 
@@ -128,7 +136,7 @@ conversation memory, notes, and the supported local tools run on the user's mach
 
 ## Roadmap
 
-- System tray icon and controls.
+- Further desktop integration and polish.
 - Windows installer.
 - Android-installable PWA client.
 
