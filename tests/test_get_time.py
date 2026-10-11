@@ -9,12 +9,13 @@ from divyaraj.core.tools.get_time import GetTimeTool
 
 def test_get_time_returns_iso_local_datetime(monkeypatch) -> None:
     """The result is a local ISO timestamp with second precision."""
-    expected = "2026-10-07T12:34:56+05:30"
+    mocked_now = datetime.fromisoformat("2026-10-07T12:34:56+05:30")
+    expected = mocked_now.astimezone().isoformat(timespec="seconds")
 
     class FixedDateTime:
         @classmethod
         def now(cls) -> datetime:
-            return datetime.fromisoformat(expected)
+            return mocked_now
 
     monkeypatch.setattr("divyaraj.core.tools.get_time.datetime", FixedDateTime)
 
