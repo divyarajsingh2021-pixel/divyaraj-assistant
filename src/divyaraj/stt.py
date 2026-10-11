@@ -230,6 +230,7 @@ class SpeechToText:
                 self.settings.whisper_model,
                 device="cpu",
                 compute_type=self.settings.stt_compute_type,
+                download_root=str(self.settings.whisper_download_dir),
             )
         except (OSError, RuntimeError, ValueError) as error:
             raise VoiceInputError(

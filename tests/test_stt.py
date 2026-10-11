@@ -169,6 +169,7 @@ def test_whisper_load_uses_configured_base_model_on_cpu(monkeypatch) -> None:
         "model_name": "base",
         "device": "cpu",
         "compute_type": "int8",
+        "download_root": str(Settings().whisper_download_dir),
     }
 
 

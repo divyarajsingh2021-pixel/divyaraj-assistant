@@ -2,7 +2,7 @@
 
 import pytest
 
-from divyaraj.config import load_settings
+from divyaraj.config import load_settings, user_data_directory
 
 
 def test_load_settings_reads_environment(monkeypatch) -> None:
@@ -26,7 +26,7 @@ def test_load_settings_reads_environment(monkeypatch) -> None:
 
 def test_load_settings_uses_defaults(monkeypatch) -> None:
     """Unset values receive safe local defaults."""
-    monkeypatch.setattr("divyaraj.config.load_dotenv", lambda: None)
+    monkeypatch.setattr("divyaraj.config.load_dotenv", lambda *args, **kwargs: None)
     for name in (
         "APP_NAME",
         "LOG_LEVEL",
@@ -56,6 +56,38 @@ def test_load_settings_uses_defaults(monkeypatch) -> None:
         "explorer": "explorer.exe",
         "notepad": "notepad.exe",
     }
+
+
+def test_default_data_directory_uses_appdata(monkeypatch, tmp_path) -> None:
+    """Installed app defaults and model paths stay inside the user's profile."""
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    monkeypatch.delenv("DATA_DIR", raising=False)
+    monkeypatch.delenv("PIPER_MODEL_PATH", raising=False)
+    monkeypatch.setattr("divyaraj.config.load_dotenv", lambda *args, **kwargs: None)
+
+    settings = load_settings()
+
+    expected_directory = tmp_path / "Roaming" / "Divyaraj"
+    assert user_data_directory() == expected_directory
+    assert settings.data_dir == expected_directory
+    assert settings.database_path == expected_directory / "divyaraj.db"
+    assert settings.whisper_download_dir == expected_directory / "models" / "whisper"
+    assert settings.piper_model_path == (
+        expected_directory / "models" / "en_US-lessac-medium.onnx"
+    )
+
+
+def test_relative_data_dir_stays_under_appdata(monkeypatch, tmp_path) -> None:
+    """Relative data overrides cannot resolve into a protected install directory."""
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    monkeypatch.setenv("DATA_DIR", "assistant-data")
+    monkeypatch.delenv("PIPER_MODEL_PATH", raising=False)
+    monkeypatch.setattr("divyaraj.config.load_dotenv", lambda *args, **kwargs: None)
+
+    settings = load_settings()
+
+    assert settings.data_dir == tmp_path / "Roaming" / "Divyaraj" / "assistant-data"
+    assert settings.settings_path == tmp_path / "Roaming" / "Divyaraj" / ".env"
 
 
 def test_load_settings_parses_app_allowlist(monkeypatch) -> None:

@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -14,6 +15,17 @@ DEFAULT_ALLOWED_APPS = {
 }
 
 
+def user_data_directory() -> Path:
+    """Return the per-user application data directory."""
+    app_data = os.environ.get("APPDATA")
+    if app_data:
+        return Path(app_data) / "Divyaraj"
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    if xdg_data_home:
+        return Path(xdg_data_home) / "divyaraj"
+    return Path.home() / ".local" / "share" / "divyaraj"
+
+
 class Settings(BaseModel):
     """Validated runtime settings for Divyaraj Assistant."""
 
@@ -22,7 +34,7 @@ class Settings(BaseModel):
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"
-    data_dir: Path = Path("data")
+    data_dir: Path = Field(default_factory=user_data_directory)
     allowed_apps: dict[str, str] = Field(
         default_factory=lambda: DEFAULT_ALLOWED_APPS.copy()
     )
@@ -39,10 +51,35 @@ class Settings(BaseModel):
         """Return the SQLite database path inside the configured data folder."""
         return self.data_dir / "divyaraj.db"
 
+    @property
+    def settings_path(self) -> Path:
+        """Return the writable per-user environment settings file."""
+        return user_data_directory() / ".env"
+
+    @property
+    def whisper_download_dir(self) -> Path:
+        """Return the cache folder for downloaded Faster-Whisper models."""
+        return self.data_dir / "models" / "whisper"
+
 
 def load_settings() -> Settings:
     """Load settings from environment variables and an optional local .env file."""
-    load_dotenv()
+    default_data_dir = user_data_directory()
+    if not getattr(sys, "frozen", False):
+        load_dotenv()
+    load_dotenv(dotenv_path=default_data_dir / ".env", override=False)
+    data_dir_value = os.environ.get("DATA_DIR")
+    data_dir = Path(data_dir_value) if data_dir_value else default_data_dir
+    if not data_dir.is_absolute():
+        data_dir = default_data_dir / data_dir
+    piper_model_path = Path(
+        os.environ.get(
+            "PIPER_MODEL_PATH",
+            str(data_dir / "models" / "en_US-lessac-medium.onnx"),
+        )
+    )
+    if not piper_model_path.is_absolute():
+        piper_model_path = data_dir / piper_model_path
     allowed_apps = os.environ.get("ALLOWED_APPS")
     if allowed_apps:
         try:
@@ -61,7 +98,7 @@ def load_settings() -> Settings:
         llm_provider=os.environ.get("LLM_PROVIDER", "ollama"),
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
         ollama_model=os.environ.get("OLLAMA_MODEL", "qwen2.5:3b"),
-        data_dir=Path(os.environ.get("DATA_DIR", "data")),
+        data_dir=data_dir,
         allowed_apps={
             name.casefold(): executable
             for name, executable in parsed_allowed_apps.items()
@@ -73,8 +110,6 @@ def load_settings() -> Settings:
         global_hotkey=os.environ.get("GLOBAL_HOTKEY", "ctrl+space"),
         start_with_windows=os.environ.get("START_WITH_WINDOWS", "false").casefold()
         in {"1", "true", "yes", "on"},
-        piper_model_path=Path(
-            os.environ.get("PIPER_MODEL_PATH", "models/en_US-lessac-medium.onnx")
-        ),
+        piper_model_path=piper_model_path,
         speech_max_characters=int(os.environ.get("SPEECH_MAX_CHARACTERS", "240")),
     )

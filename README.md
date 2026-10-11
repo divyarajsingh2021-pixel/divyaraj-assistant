@@ -49,26 +49,55 @@ The desktop window runs recognition, model requests, tool execution, and speech
 output in a worker so the interface can remain responsive. The text and voice CLI
 use the same agent, tool registry, and safety rules.
 
-## Quick start: Windows
+## Download
 
-### 1. Install prerequisites
+Download **`DivyarajSetup.exe`** from the
+[latest GitHub Release](https://github.com/divyarajsingh2021-pixel/divyaraj-assistant/releases/latest).
+Releases are built for Windows and install the desktop application.
 
-- Install **Python 3.11** from [python.org](https://www.python.org/downloads/windows/).
-  During installation, enable **Add Python to PATH**.
-- Install [Ollama for Windows](https://ollama.com/download) and start it.
+Windows SmartScreen may warn that the installer is from an unknown publisher.
+Divyaraj is currently unsigned; continue only if you downloaded the installer from
+the project's official GitHub Releases page.
 
-### 2. Download the default model
+## Install on Windows
 
-In PowerShell, pull the default local model:
+1. Run `DivyarajSetup.exe` and follow the setup wizard.
+2. Use the Start Menu shortcut to launch Divyaraj Assistant. The installer can also
+   create an optional desktop shortcut.
+
+Python and the Python dependencies are bundled with the installed app.
+
+## First run
+
+On first launch, Divyaraj checks that Ollama is installed and running. If it is
+missing or stopped, the setup window offers a download link and a **Retry** button.
+Once Ollama is available, Divyaraj downloads the configured Ollama model if needed,
+then prepares the selected Faster-Whisper model and the default Piper voice. Progress
+is shown in the setup window. These downloads need an internet connection; if one
+fails, check the connection and use **Retry**. Setup also checks for missing models
+again on later launches.
+
+Settings, the SQLite notes/conversation database, and downloaded speech models are
+stored under `%APPDATA%\Divyaraj`, not in the installation directory. This allows
+the app to keep working when installed under Program Files.
+
+After setup, use the Start Menu shortcut or run **Divyaraj Assistant** from the
+desktop shortcut if you selected one. Click the microphone button for push-to-talk.
+The global shortcut defaults to **Ctrl+Space**; it restores the window and starts
+listening. Closing the window minimizes Divyaraj to the system tray.
+
+## Run from source
+
+For development, install **Python 3.11** from [python.org](https://www.python.org/downloads/windows/)
+and [Ollama for Windows](https://ollama.com/download). Start Ollama and pull the
+default model:
 
 ```powershell
 ollama pull qwen2.5:3b
 ```
 
-### 3. Install Divyaraj
-
-From the project directory, create and activate a virtual environment, then install
-the project and development dependencies:
+Then from the project directory, create a virtual environment and install the
+development dependencies:
 
 ```powershell
 py -3.11 -m venv .venv
@@ -76,47 +105,42 @@ py -3.11 -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-### 4. Launch the desktop app
+Launch the GUI:
 
 ```powershell
 python -m divyaraj --gui
 ```
 
-Type in the chat box and press **Send** or **Ctrl+Enter**. Click the microphone
-button to start recording and click it again to stop. Risky tool requests display a
-Yes/No confirmation dialog. Closing the window leaves Divyaraj in the system tray;
-choose **Open**, **Mute voice**, or **Quit** from the tray menu. Press **Ctrl+Space**
-to show the window and start push-to-talk.
-
-### 5. Optional: run voice mode in the terminal
+For terminal voice mode, run:
 
 ```powershell
 python -m divyaraj --voice
 ```
 
-Press Enter to start push-to-talk and Enter again to finish recording. Use `/mute`
-and `/unmute` between turns to control spoken replies. The GUI and CLI share the same
-agent and local conversation database.
+In the GUI, type in the chat box and press **Send** or **Ctrl+Enter**. Click the
+microphone button to start recording and click it again to stop. Risky tool requests
+display a Yes/No confirmation dialog. Closing the window leaves Divyaraj in the
+system tray; choose **Open**, **Mute voice**, or **Quit** from the tray menu. Press
+**Ctrl+Space** to show the window and start push-to-talk.
 
 ## Voice setup
 
 Speech recognition uses Faster-Whisper's `base` model on CPU with `int8` compute and
-automatic language detection. The first use may download the model; set
+automatic language detection. The first-run setup downloads it; set
 `WHISPER_MODEL=tiny` in `.env` if you need a smaller model.
 
-For offline Piper speech, download a voice model and its matching `.onnx.json`
-configuration from the [Piper voices collection](https://github.com/rhasspy/piper-voices)
-and place them in `models/`. The default model path is
-`models/en_US-lessac-medium.onnx`. Set `PIPER_MODEL_PATH` in `.env` to use a different
-voice. If Piper or the voice model is unavailable, Divyaraj falls back to Windows
-speech voices through `pyttsx3`.
+The first-run setup downloads the default Piper voice and its configuration for
+offline speech. Set `PIPER_MODEL_PATH` in `.env` to use a different voice file. If
+Piper or the voice model is unavailable, Divyaraj falls back to Windows speech
+voices through `pyttsx3`.
 
 Optional settings can be placed in a local `.env` file (ignored by Git); see
 [`.env.example`](.env.example) for the supported variables. `GLOBAL_HOTKEY` defaults
 to `ctrl+space`. `START_WITH_WINDOWS` defaults to `false`; enabling it creates
 `Divyaraj Assistant.cmd` in the current user's Startup folder, and turning it off
 removes that file. The default model is `qwen2.5:3b`, and conversation history and
-notes are stored in `data/divyaraj.db`.
+notes are stored under `%APPDATA%\Divyaraj` on Windows (or the platform's per-user
+data directory when running elsewhere).
 
 ## How it works
 
@@ -136,8 +160,6 @@ conversation memory, notes, and the supported local tools run on the user's mach
 
 ## Roadmap
 
-- Further desktop integration and polish.
-- Windows installer.
 - Android-installable PWA client.
 
 ## Limitations
@@ -149,12 +171,11 @@ conversation memory, notes, and the supported local tools run on the user's mach
 - **Voice recognition takes CPU and memory.** Faster-Whisper runs on CPU; the `base`
   model can have noticeable startup and transcription latency on an 8 GB laptop.
   Choosing `tiny` reduces resource use but may reduce recognition quality.
-- **Voice quality depends on local setup.** Piper requires a separately downloaded
-  voice model. Otherwise, speech output depends on the Windows voices available to
-  `pyttsx3`.
+- **Voice quality depends on local setup.** If Piper cannot load the downloaded
+  voice, speech output falls back to the Windows voices available to `pyttsx3`.
 - **Web search is not offline.** DuckDuckGo search requires an internet connection.
-- **The desktop app currently targets Windows.** A system tray integration, installer,
-  and Android PWA remain on the roadmap.
+- **The desktop installer targets Windows.** An Android-installable PWA remains on
+  the roadmap.
 
 ## Development
 
@@ -164,6 +185,13 @@ from the project root:
 ```powershell
 ruff check .
 pytest
+```
+
+To build the Windows one-folder app and installer locally, install the free Inno
+Setup 6 compiler and run:
+
+```powershell
+.\packaging\build.ps1
 ```
 
 ## License

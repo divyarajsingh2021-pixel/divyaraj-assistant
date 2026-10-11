@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import queue
 import tkinter as tk
-from pathlib import Path
+import webbrowser
 from queue import SimpleQueue
+from threading import Event, Thread
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -13,6 +15,12 @@ import customtkinter as ctk
 from divyaraj.config import Settings, load_settings
 from divyaraj.core.agent import Agent
 from divyaraj.core.llm import OllamaClient
+from divyaraj.first_run import (
+    OLLAMA_DOWNLOAD_URL,
+    SetupCancelled,
+    SetupError,
+    prepare_first_run,
+)
 from divyaraj.stt import SpeechToText
 from divyaraj.tts import TextToSpeech
 from divyaraj.ui_desktop.controller import (
@@ -27,6 +35,8 @@ from divyaraj.ui_desktop.settings import save_desktop_settings
 from divyaraj.ui_desktop.single_instance import SingleInstanceGuard
 from divyaraj.ui_desktop.startup import set_start_with_windows
 from divyaraj.ui_desktop.tray import TrayController
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DesktopWindow(ctk.CTk):
@@ -46,6 +56,14 @@ class DesktopWindow(ctk.CTk):
         self.tray: TrayController | None = None
         self.hotkey: GlobalHotkey | None = None
         self.shutting_down = False
+        self.setup_ready = False
+        self.setup_events: queue.Queue[tuple[str, str, float | None]] = queue.Queue()
+        self.setup_cancel = Event()
+        self.setup_thread: Thread | None = None
+        self.setup_window: ctk.CTkToplevel | None = None
+        self.setup_label: ctk.CTkLabel | None = None
+        self.setup_progress: ctk.CTkProgressBar | None = None
+        self.setup_retry_button: ctk.CTkButton | None = None
         self.title("Divyaraj Assistant")
         self.geometry("900x720")
         self.minsize(640, 520)
@@ -75,6 +93,7 @@ class DesktopWindow(ctk.CTk):
         self._start_integrations()
         self.protocol("WM_DELETE_WINDOW", self._minimize_to_tray)
         self.bind("<Control-Return>", self._send_shortcut)
+        self.after(250, self._begin_first_run_setup)
         self.after(100, self._poll_events)
 
     def _start_integrations(self) -> None:
@@ -230,7 +249,7 @@ class DesktopWindow(ctk.CTk):
 
     def _send(self) -> None:
         """Queue the text currently entered by the user."""
-        if self.busy:
+        if self.busy or not self.setup_ready:
             return
         message = self.input_box.get("1.0", "end-1c").strip()
         if not message:
@@ -256,7 +275,7 @@ class DesktopWindow(ctk.CTk):
             self.controller.stop_voice()
             self._update_controls()
             return
-        if self.busy:
+        if self.busy or not self.setup_ready:
             return
         self.recording = True
         self.busy = True
@@ -328,7 +347,7 @@ class DesktopWindow(ctk.CTk):
                     model_name,
                     voice_enabled,
                     whisper_model,
-                    Path(".env"),
+                    self.settings.settings_path,
                     global_hotkey,
                     start_with_windows,
                 )
@@ -360,6 +379,7 @@ class DesktopWindow(ctk.CTk):
 
     def _poll_events(self) -> None:
         """Handle background events on Tk's main thread."""
+        self._poll_setup_events()
         while True:
             try:
                 event = self.events.get_nowait()
@@ -415,6 +435,140 @@ class DesktopWindow(ctk.CTk):
                 )
         self.after(100, self._poll_events)
 
+    def _begin_first_run_setup(self) -> None:
+        """Show setup progress and run model checks outside the UI thread."""
+        if self.shutting_down:
+            return
+        if self.setup_thread is not None and self.setup_thread.is_alive():
+            return
+        self.setup_cancel.clear()
+        self._show_setup_window()
+        self._set_setup_progress("Checking Ollama and local speech models…", None)
+        self.setup_retry_button.grid_remove()
+
+        def run_setup() -> None:
+            try:
+                prepare_first_run(
+                    self.settings,
+                    lambda stage, text, percent: self.setup_events.put(
+                        (stage, text, percent)
+                    ),
+                    self.setup_cancel,
+                )
+            except SetupCancelled:
+                return
+            except SetupError as error:
+                self.setup_events.put(("error", str(error), None))
+            except Exception as error:
+                LOGGER.exception("Unexpected first-run setup failure.")
+                self.setup_events.put(
+                    (
+                        "error",
+                        f"Setup failed unexpectedly. Check the installation and "
+                        f"retry: {error}",
+                        None,
+                    )
+                )
+
+        self.setup_thread = Thread(
+            target=run_setup,
+            name="divyaraj-first-run-setup",
+            daemon=True,
+        )
+        self.setup_thread.start()
+
+    def _show_setup_window(self) -> None:
+        """Build or restore the first-run progress and recovery dialog."""
+        if self.setup_window is not None and self.setup_window.winfo_exists():
+            self.setup_window.deiconify()
+            self.setup_window.lift()
+            return
+        window = ctk.CTkToplevel(self)
+        window.title("Divyaraj setup")
+        window.geometry("480x245")
+        window.transient(self)
+        window.grab_set()
+        window.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            window,
+            text="Preparing Divyaraj",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 8))
+        self.setup_label = ctk.CTkLabel(
+            window,
+            text="Checking Ollama…",
+            wraplength=430,
+            justify="left",
+        )
+        self.setup_label.grid(row=1, column=0, sticky="ew", padx=24, pady=8)
+        self.setup_progress = ctk.CTkProgressBar(window, mode="indeterminate")
+        self.setup_progress.grid(row=2, column=0, sticky="ew", padx=24, pady=8)
+        self.setup_progress.start()
+        buttons = ctk.CTkFrame(window, fg_color="transparent")
+        buttons.grid(row=3, column=0, sticky="ew", padx=24, pady=(10, 20))
+        buttons.grid_columnconfigure((0, 1, 2), weight=1)
+        ctk.CTkButton(
+            buttons,
+            text="Download Ollama",
+            command=lambda: webbrowser.open(OLLAMA_DOWNLOAD_URL),
+        ).grid(row=0, column=0, padx=(0, 6))
+        self.setup_retry_button = ctk.CTkButton(
+            buttons,
+            text="Retry",
+            command=self._begin_first_run_setup,
+        )
+        self.setup_retry_button.grid(row=0, column=1, padx=6)
+        ctk.CTkButton(
+            buttons,
+            text="Quit",
+            fg_color="#414957",
+            command=self._quit,
+        ).grid(row=0, column=2, padx=(6, 0))
+        self.setup_retry_button.grid_remove()
+        window.protocol("WM_DELETE_WINDOW", self._minimize_to_tray)
+        self.setup_window = window
+
+    def _poll_setup_events(self) -> None:
+        """Apply model-download progress and errors on Tk's main thread."""
+        while True:
+            try:
+                stage, text, percent = self.setup_events.get_nowait()
+            except queue.Empty:
+                return
+            if stage == "error":
+                self._set_setup_progress(text, None)
+                self.setup_progress.stop()
+                self.setup_retry_button.grid_remove()
+                self.setup_retry_button.grid(row=0, column=1, padx=6, sticky="ew")
+                self.setup_ready = False
+            elif stage == "complete":
+                self.setup_ready = True
+                if self.setup_progress is not None:
+                    self.setup_progress.stop()
+                if self.setup_window is not None:
+                    self.setup_window.grab_release()
+                    self.setup_window.destroy()
+                    self.setup_window = None
+                self.status_label.configure(text="Idle")
+                self._update_controls()
+            else:
+                self._set_setup_progress(text, percent)
+
+    def _set_setup_progress(self, text: str, percent: float | None) -> None:
+        """Update setup label and determinate/indeterminate progress display."""
+        if self.setup_label is not None and self.setup_label.winfo_exists():
+            self.setup_label.configure(text=text)
+        bar = self.setup_progress
+        if bar is None or not bar.winfo_exists():
+            return
+        if percent is None:
+            bar.configure(mode="indeterminate")
+            bar.start()
+        else:
+            bar.stop()
+            bar.configure(mode="determinate")
+            bar.set(max(0.0, min(1.0, percent / 100)))
+
     def _show_confirmation(self, request: ConfirmationRequest) -> None:
         """Ask for explicit permission in a modal dialog without blocking Tk."""
         dialog = ctk.CTkToplevel(self)
@@ -466,10 +620,11 @@ class DesktopWindow(ctk.CTk):
 
     def _update_controls(self) -> None:
         """Reflect the active worker/recording state in the buttons."""
-        self.send_button.configure(state="disabled" if self.busy else "normal")
+        enabled = self.setup_ready and not self.busy
+        self.send_button.configure(state="normal" if enabled else "disabled")
         self.mic_button.configure(
             text="■  Stop listening" if self.recording else "🎙  Start listening",
-            state="normal" if self.recording or not self.busy else "disabled",
+            state=("normal" if self.recording else "normal" if enabled else "disabled"),
         )
 
     def _minimize_to_tray(self) -> None:
@@ -489,6 +644,9 @@ class DesktopWindow(ctk.CTk):
         if self.shutting_down:
             return
         self.shutting_down = True
+        self.setup_cancel.set()
+        if self.setup_thread is not None:
+            self.setup_thread.join(timeout=2)
         if self.hotkey is not None:
             self.hotkey.stop()
             self.hotkey = None

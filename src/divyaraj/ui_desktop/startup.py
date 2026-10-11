@@ -34,12 +34,17 @@ def set_start_with_windows(
         return script
 
     python_executable = executable or Path(sys.executable)
-    project_directory = working_directory or Path.cwd()
+    project_directory = working_directory or (
+        python_executable.parent if getattr(sys, "frozen", False) else Path.cwd()
+    )
     folder.mkdir(parents=True, exist_ok=True)
+    launch_command = (
+        f'"{python_executable}"'
+        if getattr(sys, "frozen", False)
+        else f'"{python_executable}" -m divyaraj --gui'
+    )
     script.write_text(
-        "@echo off\r\n"
-        f'cd /d "{project_directory}"\r\n'
-        f'"{python_executable}" -m divyaraj --gui\r\n',
+        f'@echo off\r\ncd /d "{project_directory}"\r\n{launch_command}\r\n',
         encoding="utf-8",
     )
     return script
