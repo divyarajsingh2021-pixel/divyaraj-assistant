@@ -126,6 +126,41 @@ def test_ensure_ollama_model_pulls_and_reports_progress(monkeypatch) -> None:
     ]
 
 
+def test_ensure_ollama_model_handles_none_progress_values(monkeypatch) -> None:
+    """Ollama progress updates with None completed/total are handled gracefully."""
+    import divyaraj.first_run as first_run
+
+    monkeypatch.setattr(
+        first_run.httpx,
+        "get",
+        lambda *args, **kwargs: FakeResponse({"models": []}),
+    )
+    updates: list[tuple[str, str, float | None]] = []
+
+    class FakeClient:
+        def __init__(self, host: str) -> None:
+            pass
+
+        def pull(self, model: str, *, stream: bool) -> list[dict[str, object]]:
+            return [
+                {"status": "pulling manifest", "completed": None, "total": 1000},
+                {"status": "verifying sha256", "completed": 500, "total": None},
+                {"status": "writing manifest", "completed": None, "total": None},
+                {"status": "success", "completed": 1000, "total": 1000},
+            ]
+
+    monkeypatch.setitem(sys.modules, "ollama", SimpleNamespace(Client=FakeClient))
+    _ensure_ollama_model(Settings(), lambda *update: updates.append(update), None)
+
+    assert updates == [
+        ("ollama", "Downloading Ollama model qwen2.5:3b…", 0),
+        ("ollama", "pulling manifest", 0.0),
+        ("ollama", "verifying sha256", None),
+        ("ollama", "writing manifest", None),
+        ("ollama", "success", 100.0),
+    ]
+
+
 def test_piper_download_writes_user_data_model_and_config(
     monkeypatch,
     tmp_path: Path,

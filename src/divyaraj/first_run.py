@@ -129,7 +129,13 @@ def _ensure_ollama_model(
             status = _value(update, "status", "Downloading model…")
             total = _value(update, "total", 0)
             completed = _value(update, "completed", 0)
-            percent = (completed / total * 100) if total else None
+            percent: float | None = None
+            if (
+                isinstance(total, (int, float))
+                and total > 0
+                and isinstance(completed, (int, float))
+            ):
+                percent = (completed / total) * 100
             progress("ollama", str(status), percent)
     except SetupCancelled:
         raise
@@ -138,6 +144,7 @@ def _ensure_ollama_model(
         ollama.ResponseError,
         OSError,
         RuntimeError,
+        TypeError,
         ValueError,
     ) as error:
         raise SetupError(
@@ -148,8 +155,11 @@ def _ensure_ollama_model(
 def _value(item: object, name: str, default: object) -> object:
     """Read a response field from either an SDK object or a mapping."""
     if isinstance(item, dict):
-        return item.get(name, default)
-    return getattr(item, name, default)
+        val = item.get(name, default)
+    else:
+        val = getattr(item, name, default)
+    return default if val is None else val
+
 
 
 def _ensure_whisper_model(
