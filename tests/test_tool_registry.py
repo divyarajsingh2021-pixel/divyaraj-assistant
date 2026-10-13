@@ -57,3 +57,21 @@ def test_unknown_tool_raises_clear_error() -> None:
     """A lookup for an unknown tool reports its name."""
     with pytest.raises(KeyError, match="not registered"):
         get_tool("missing_registry_test")
+
+
+def test_builtin_tools_are_registered() -> None:
+    """All built-in tools are automatically loaded and retrievable."""
+    tools = get_registered_tools()
+    registered_names = {tool.name for tool in tools}
+    expected_names = {
+        "create_note",
+        "get_time",
+        "list_notes",
+        "open_app",
+        "search_notes",
+        "web_search",
+    }
+    assert expected_names.issubset(registered_names)
+    for name in expected_names:
+        assert get_tool(name).name == name
+

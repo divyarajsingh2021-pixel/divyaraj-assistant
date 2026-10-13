@@ -1,6 +1,5 @@
 """Shared registry for tool classes."""
 
-from importlib import import_module
 from typing import TypeVar
 
 from divyaraj.core.tools.base import Tool
@@ -15,6 +14,9 @@ _BUILTIN_TOOL_MODULES = (
     "search_notes",
     "web_search",
 )
+
+
+_BUILTIN_TOOLS_LOADED = False
 
 
 def register(tool_class: type[TTool]) -> type[TTool]:
@@ -43,5 +45,18 @@ def get_registered_tools() -> tuple[Tool, ...]:
 
 def _load_builtin_tools() -> None:
     """Import built-in modules once so their decorators register each tool."""
-    for module_name in _BUILTIN_TOOL_MODULES:
-        import_module(f"divyaraj.core.tools.{module_name}")
+    global _BUILTIN_TOOLS_LOADED
+    if _BUILTIN_TOOLS_LOADED:
+        return
+
+    from divyaraj.core.tools import (  # noqa: F401
+        create_note,
+        get_time,
+        list_notes,
+        open_app,
+        search_notes,
+        web_search,
+    )
+
+    _BUILTIN_TOOLS_LOADED = True
+

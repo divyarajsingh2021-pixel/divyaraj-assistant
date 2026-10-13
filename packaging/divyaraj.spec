@@ -8,7 +8,12 @@ from PyInstaller.utils.hooks import (
     collect_submodules,
 )
 
+import sys
+
 ROOT = Path(SPECPATH).resolve().parent
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+
 datas = []
 binaries = []
 hiddenimports = []
@@ -47,6 +52,7 @@ hiddenimports += collect_submodules(
         ("piper.train", "piper.http_server", "piper.patch_voice_with_alignment")
     ),
 )
+hiddenimports += collect_submodules("divyaraj")
 hiddenimports += ["piper", "faster_whisper", "onnxruntime"]
 excludes = ["torch", "torchvision", "torchaudio", "onnx"]
 
