@@ -12,6 +12,7 @@ from collections.abc import Callable
 LOGGER = logging.getLogger(__name__)
 _HOST = "127.0.0.1"
 _APP_ID = "divyaraj-assistant"
+_ACKNOWLEDGEMENT = b"DIVYARAJ"
 
 
 def instance_port(username: str | None = None) -> int:
@@ -48,6 +49,8 @@ class SingleInstanceGuard:
             try:
                 with socket.create_connection((_HOST, self._port), timeout=1) as client:
                     client.sendall(b"SHOW")
+                    if client.recv(len(_ACKNOWLEDGEMENT)) != _ACKNOWLEDGEMENT:
+                        raise OSError("The port is not owned by Divyaraj.")
             except OSError:
                 raise RuntimeError(
                     "Could not safely check whether Divyaraj is already running. "
@@ -94,5 +97,6 @@ class SingleInstanceGuard:
                 try:
                     if connection.recv(16) == b"SHOW":
                         self._on_show()
+                        connection.sendall(_ACKNOWLEDGEMENT)
                 except OSError:
                     LOGGER.exception("Could not read a single-instance request.")
