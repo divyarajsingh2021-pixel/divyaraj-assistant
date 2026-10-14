@@ -109,18 +109,22 @@ def test_ensure_ollama_model_pulls_and_reports_progress(monkeypatch) -> None:
             assert host == "http://localhost:11434"
 
         def pull(self, model: str, *, stream: bool) -> list[dict[str, object]]:
-            assert model == "qwen2.5:3b"
+            assert model == "qwen2.5:1.5b"
             assert stream
             return [
                 {"status": "downloading", "completed": 25, "total": 100},
                 {"status": "success", "completed": 100, "total": 100},
             ]
 
-    monkeypatch.setitem(sys.modules, "ollama", SimpleNamespace(Client=FakeClient))
+    monkeypatch.setitem(
+        sys.modules,
+        "ollama",
+        SimpleNamespace(Client=FakeClient, ResponseError=Exception),
+    )
     _ensure_ollama_model(Settings(), lambda *update: updates.append(update), None)
 
     assert updates == [
-        ("ollama", "Downloading Ollama model qwen2.5:3b…", 0),
+        ("ollama", "Downloading Ollama model qwen2.5:1.5b…", 0),
         ("ollama", "downloading", 25),
         ("ollama", "success", 100),
     ]
@@ -149,11 +153,15 @@ def test_ensure_ollama_model_handles_none_progress_values(monkeypatch) -> None:
                 {"status": "success", "completed": 1000, "total": 1000},
             ]
 
-    monkeypatch.setitem(sys.modules, "ollama", SimpleNamespace(Client=FakeClient))
+    monkeypatch.setitem(
+        sys.modules,
+        "ollama",
+        SimpleNamespace(Client=FakeClient, ResponseError=Exception),
+    )
     _ensure_ollama_model(Settings(), lambda *update: updates.append(update), None)
 
     assert updates == [
-        ("ollama", "Downloading Ollama model qwen2.5:3b…", 0),
+        ("ollama", "Downloading Ollama model qwen2.5:1.5b…", 0),
         ("ollama", "pulling manifest", 0.0),
         ("ollama", "verifying sha256", None),
         ("ollama", "writing manifest", None),

@@ -124,7 +124,7 @@ def test_voice_mode_routes_transcribed_turn_and_mute_commands(
         ("A short reply.", True),
     ]
     output = capsys.readouterr().out
-    assert "Model: qwen2.5:3b" in output
+    assert "Model: qwen2.5:1.5b" in output
     assert "Speech recognition model: base (CPU, int8)" in output
 
 

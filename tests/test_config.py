@@ -47,7 +47,7 @@ def test_load_settings_uses_defaults(monkeypatch) -> None:
     assert settings.app_name == "Divyaraj Assistant"
     assert settings.llm_provider == "ollama"
     assert settings.ollama_base_url == "http://localhost:11434"
-    assert settings.ollama_model == "qwen2.5:3b"
+    assert settings.ollama_model == "qwen2.5:1.5b"
     assert settings.whisper_model == "base"
     assert settings.global_hotkey == "ctrl+space"
     assert not settings.start_with_windows

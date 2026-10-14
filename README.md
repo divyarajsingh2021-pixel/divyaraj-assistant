@@ -93,7 +93,7 @@ and [Ollama for Windows](https://ollama.com/download). Start Ollama and pull the
 default model:
 
 ```powershell
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:1.5b
 ```
 
 Then from the project directory, create a virtual environment and install the
@@ -138,7 +138,7 @@ Optional settings can be placed in a local `.env` file (ignored by Git); see
 [`.env.example`](.env.example) for the supported variables. `GLOBAL_HOTKEY` defaults
 to `ctrl+space`. `START_WITH_WINDOWS` defaults to `false`; enabling it creates
 `Divyaraj Assistant.cmd` in the current user's Startup folder, and turning it off
-removes that file. The default model is `qwen2.5:3b`, and conversation history and
+removes that file. The default model is `qwen2.5:1.5b`, and conversation history and
 notes are stored under `%APPDATA%\Divyaraj` on Windows (or the platform's per-user
 data directory when running elsewhere).
 

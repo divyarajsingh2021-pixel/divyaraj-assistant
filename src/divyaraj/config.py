@@ -33,7 +33,7 @@ class Settings(BaseModel):
     log_level: str = "INFO"
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:3b"
+    ollama_model: str = "qwen2.5:1.5b"
     data_dir: Path = Field(default_factory=user_data_directory)
     allowed_apps: dict[str, str] = Field(
         default_factory=lambda: DEFAULT_ALLOWED_APPS.copy()
@@ -97,7 +97,7 @@ def load_settings() -> Settings:
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         llm_provider=os.environ.get("LLM_PROVIDER", "ollama"),
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-        ollama_model=os.environ.get("OLLAMA_MODEL", "qwen2.5:3b"),
+        ollama_model=os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b"),
         data_dir=data_dir,
         allowed_apps={
             name.casefold(): executable
